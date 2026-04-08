@@ -10,10 +10,10 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: d5c76541bc0e1154983750cb7fbb99b9, type: 3}
-  m_Name: Edificio Primario
+  m_Name: Edificio Secundario
   m_EditorClassIdentifier: 
-  id: 0
-  nombre: Primero
-  costoBase: 10
-  produccionBase: 0.1
+  id: 1
+  nombre: Secundario
+  costoBase: 100
+  produccionBase: 1
   aumentoCosto: 1.15
