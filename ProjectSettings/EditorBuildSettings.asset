@@ -6,7 +6,7 @@ EditorBuildSettings:
   serializedVersion: 2
   m_Scenes:
   - enabled: 1
-    path: Assets/Scenes/Base.unity
+    path: Assets/Cliker/Base_Cliker.unity
     guid: 5be09565464b01247a4b32022771a9fa
   - enabled: 1
     path: Assets/Scenes/SampleScene.unity
