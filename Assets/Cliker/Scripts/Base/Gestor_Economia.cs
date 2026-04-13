@@ -166,7 +166,7 @@ public class Gestor_Economia : MonoBehaviour
         }
 
         // Mostramos la Agonía usando formato abreviado.
-        textAgonia.text = FormateadorNumeros.FormatearNumero(agonia, 1);
+        textAgonia.text = FormateadorNumeros.FormatearNumero(agonia, 2);
     }
 
     /// <summary>

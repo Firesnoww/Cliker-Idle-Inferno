@@ -15,5 +15,5 @@ MonoBehaviour:
   id: 0
   nombre: Primero
   costoBase: 10
-  produccionBase: 0.1
+  produccionBase: 1
   aumentoCosto: 1.15

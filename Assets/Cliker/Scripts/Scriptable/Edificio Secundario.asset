@@ -15,5 +15,5 @@ MonoBehaviour:
   id: 1
   nombre: Secundario
   costoBase: 100
-  produccionBase: 1
+  produccionBase: 10
   aumentoCosto: 1.15
