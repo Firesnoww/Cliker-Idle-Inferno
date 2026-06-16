@@ -1,96 +1,104 @@
+using System.Globalization;
 using TMPro;
 using UnityEngine;
 
 /// <summary>
 /// Gestor_Economia
 /// 
-/// Este script centraliza toda la economía del juego.
+/// Este script centraliza toda la economía principal del juego.
 /// 
-/// Responsabilidades principales:
-/// 1. Guardar la cantidad total de Agonía del jugador.
-/// 2. Calcular la producción total por segundo sumando todos los Productores.
-/// 3. Sumar Agonía automáticamente con el paso del tiempo.
-/// 4. Actualizar el texto de la interfaz.
-/// 5. Guardar y cargar la Agonía usando PlayerPrefs.
-/// 6. Comprar edificios validando si el jugador tiene suficiente Agonía.
+/// Responsabilidades actuales:
+/// 1. Guardar la Agonía actual del jugador.
+/// 2. Guardar la Agonía histórica total generada.
+/// 3. Calcular la producción total por segundo sumando todos los Productores.
+/// 4. Sumar Agonía automáticamente con el tiempo.
+/// 5. Actualizar la interfaz principal.
+/// 6. Comprar edificios.
+/// 7. Comprar la mejora local de un edificio.
+/// 8. Guardar y cargar el progreso económico principal.
 /// 
 /// Importante:
-/// - Este script será el ÚNICO que modificará la Agonía total de forma global.
-/// - Los Productores NO deben sumar Agonía por su cuenta.
+/// - Este script es el único que debe modificar la Agonía global.
+/// - Los Productores no gastan ni suman Agonía por su cuenta.
+/// - Los Productores solo exponen datos y progreso propio.
 /// </summary>
 public class Gestor_Economia : MonoBehaviour
 {
     [Header("Moneda principal")]
-    [Tooltip("Cantidad actual de Agonía del jugador.")]
-    [SerializeField] private float agonia;
+    [Tooltip("Cantidad actual de Agonía disponible para gastar.")]
+    [SerializeField] private double agonia;
+
+    [Tooltip("Cantidad histórica total de Agonía generada en esta partida. No disminuye al gastar.")]
+    [SerializeField] private double agoniaHistorica;
 
     [Header("Interfaz")]
     [Tooltip("Texto TMP donde se mostrará la Agonía actual.")]
     [SerializeField] private TMP_Text textAgonia;
 
     [Header("Productores registrados en la escena")]
-    [Tooltip("Arreglo fijo de todos los Productores que existen en el juego. Se asignan manualmente desde el Inspector.")]
+    [Tooltip("Listado de todos los Productores activos en la escena.")]
     [SerializeField] private Productor[] productores;
 
     [Header("Debug / Solo lectura")]
     [Tooltip("Producción total por segundo calculada a partir de todos los productores.")]
-    [SerializeField] private float produccionTotalPorSegundo;
+    [SerializeField] private double produccionTotalPorSegundo;
+
+    [Header("Click manual")]
+    [Tooltip("Valor base de Agonía que se obtiene por cada click manual.")]
+    [SerializeField] private double agoniaBasePorClick = 1d;
+
+    [Tooltip("Multiplicador general aplicado al click manual.")]
+    [SerializeField] private double multiplicadorClick = 1d;
+
+    [Tooltip("Bono plano adicional al click manual. Se deja desde ya para mejoras futuras.")]
+    [SerializeField] private double bonoPlanoClick = 0d;
+
 
     /// <summary>
-    /// Clave usada para guardar la Agonía total en PlayerPrefs.
+    /// Clave para guardar la Agonía actual.
+    /// Se guarda como texto para evitar perder precisión con números grandes.
     /// </summary>
     private const string CLAVE_AGONIA = "ECONOMIA_AGONIA_TOTAL";
 
     /// <summary>
-    /// Propiedad pública de solo lectura para consultar la Agonía actual desde otros scripts.
-    /// 
-    /// Ojo:
-    /// Se deja de solo lectura para evitar que cualquier script la modifique sin control.
-    /// Si otro script necesita cambiar la Agonía, debería hacerlo usando métodos como:
-    /// - AgregarAgonia()
-    /// - GastarAgonia()
-    /// - ComprarProductor()
+    /// Clave para guardar la Agonía histórica.
+    /// También se guarda como texto por precisión.
     /// </summary>
-    public float Agonia => agonia;
+    private const string CLAVE_AGONIA_HISTORICA = "ECONOMIA_AGONIA_HISTORICA";
 
     /// <summary>
-    /// Propiedad pública de solo lectura para consultar la producción total actual del juego.
+    /// Propiedad pública de solo lectura para consultar la Agonía actual.
     /// </summary>
-    public float ProduccionTotalPorSegundo => produccionTotalPorSegundo;
+    public double Agonia => agonia;
+
+    /// <summary>
+    /// Propiedad pública de solo lectura para consultar la Agonía histórica.
+    /// </summary>
+    public double AgoniaHistorica => agoniaHistorica;
+
+    /// <summary>
+    /// Propiedad pública de solo lectura para consultar la producción total por segundo.
+    /// </summary>
+    public double ProduccionTotalPorSegundo => produccionTotalPorSegundo;
 
     /// <summary>
     /// Start:
-    /// Se ejecuta una vez al iniciar el objeto.
-    /// 
-    /// Aquí:
-    /// - Cargamos la Agonía guardada.
-    /// - Revisamos referencias importantes.
-    /// - Actualizamos el texto al iniciar.
+    /// - Carga el progreso guardado
+    /// - Verifica referencias
+    /// - Actualiza la UI inicial
     /// </summary>
     private void Start()
     {
-        // Cargar la Agonía guardada previamente.
         CargarDatos();
-
-        // Revisar si las referencias importantes están bien puestas.
         VerificarReferencias();
-
-        // Actualizar la UI apenas inicia el juego.
         ActualizarTextoAgonia();
     }
 
     /// <summary>
     /// Update:
-    /// Se ejecuta una vez por frame.
-    /// 
-    /// Flujo actual:
-    /// 1. Calculamos la producción total sumando todos los Productores.
-    /// 2. Sumamos Agonía usando esa producción total y Time.deltaTime.
-    /// 3. Actualizamos el texto de la interfaz.
-    /// 
-    /// Importante:
-    /// Aunque esto se ejecuta cada frame, la producción está medida "por segundo"
-    /// gracias al uso de Time.deltaTime.
+    /// - Recalcula la producción total
+    /// - Genera Agonía por tiempo
+    /// - Actualiza la UI principal
     /// </summary>
     private void Update()
     {
@@ -100,116 +108,89 @@ public class Gestor_Economia : MonoBehaviour
     }
 
     /// <summary>
-    /// Recorre todos los productores registrados y suma su producción total.
-    /// 
-    /// Cada Productor ya sabe calcular cuánto produce según:
-    /// - su cantidad comprada
-    /// - su producción base
-    /// 
-    /// Este método simplemente centraliza la suma de todos ellos.
+    /// Recorre todos los Productores y suma su producción total actual.
     /// </summary>
     private void CalcularProduccionTotal()
     {
-        // Reiniciamos el acumulador antes de volver a sumar.
-        produccionTotalPorSegundo = 0f;
+        produccionTotalPorSegundo = 0d;
 
-        // Si no hay productores asignados, no hacemos nada.
         if (productores == null || productores.Length == 0)
         {
             return;
         }
 
-        // Recorremos el arreglo completo.
         for (int i = 0; i < productores.Length; i++)
         {
-            // Si por error un productor del arreglo está vacío, lo saltamos.
             if (productores[i] == null)
             {
                 continue;
             }
 
-            // Sumamos la producción de ese productor al total global.
             produccionTotalPorSegundo += productores[i].ObtenerProduccionTotal();
         }
     }
 
     /// <summary>
-    /// Suma Agonía automáticamente con el paso del tiempo.
+    /// Genera Agonía automáticamente según la producción total por segundo.
     /// 
-    /// Fórmula:
-    /// Agonía += ProducciónTotalPorSegundo * Time.deltaTime
-    /// 
-    /// Esto hace que si el juego produce, por ejemplo, 10 Agonía por segundo,
-    /// esa producción se distribuya correctamente entre los frames.
+    /// Importante:
+    /// - Suma a la Agonía actual.
+    /// - También suma a la Agonía histórica.
     /// </summary>
     private void GenerarAgoniaPorTiempo()
     {
-        agonia += produccionTotalPorSegundo * Time.deltaTime;
+        double agoniaGeneradaEsteFrame = produccionTotalPorSegundo * Time.deltaTime;
+
+        agonia += agoniaGeneradaEsteFrame;
+        agoniaHistorica += agoniaGeneradaEsteFrame;
     }
 
     /// <summary>
-    /// Actualiza el texto que muestra la Agonía total del jugador.
-    /// 
-    /// Ahora usamos el FormateadorNumeros para que los valores grandes
-    /// se vean mejor en pantalla.
-    /// 
-    /// Ejemplos:
-    /// 1500 -> 1.5K
-    /// 2500000 -> 2.5M
+    /// Actualiza el texto principal de Agonía usando formato abreviado.
     /// </summary>
     private void ActualizarTextoAgonia()
     {
-        // Si no hay texto asignado, salimos para evitar errores.
         if (textAgonia == null)
         {
             return;
         }
 
-        // Mostramos la Agonía usando formato abreviado.
         textAgonia.text = FormateadorNumeros.FormatearNumero(agonia, 2);
     }
 
     /// <summary>
-    /// Devuelve true si el jugador tiene suficiente Agonía para pagar un costo dado.
-    /// 
-    /// Este método sirve como validación simple antes de una compra.
+    /// Devuelve true si el jugador tiene suficiente Agonía para pagar un costo.
     /// </summary>
-    /// <param name="costo">Costo que se quiere validar.</param>
-    public bool PuedeComprar(float costo)
+    public bool PuedeComprar(double costo)
     {
         return agonia >= costo;
     }
 
     /// <summary>
-    /// Intenta gastar una cantidad específica de Agonía.
+    /// Intenta gastar Agonía.
     /// 
     /// Si alcanza:
     /// - resta la Agonía
-    /// - devuelve true
+    /// - actualiza UI
+    /// - guarda
     /// 
     /// Si no alcanza:
-    /// - no cambia nada
-    /// - devuelve false
+    /// - no hace nada
     /// </summary>
-    /// <param name="cantidad">Cantidad de Agonía que se quiere gastar.</param>
-    public bool GastarAgonia(float cantidad)
+    public bool GastarAgonia(double cantidad)
     {
-        // Si el costo es inválido, no hacemos nada.
-        if (cantidad <= 0f)
+        if (cantidad <= 0d)
         {
             return false;
         }
 
-        // Si no alcanza la Agonía, la compra o gasto falla.
         if (agonia < cantidad)
         {
             return false;
         }
 
-        // Si sí alcanza, restamos la cantidad.
         agonia -= cantidad;
 
-        // Actualizamos UI y guardamos.
         ActualizarTextoAgonia();
         GuardarDatos();
 
@@ -220,44 +201,85 @@ public class Gestor_Economia : MonoBehaviour
     /// Suma Agonía manualmente.
     /// 
     /// Este método sirve para:
-    /// - clicks manuales
+    /// - click manual
     /// - recompensas
     /// - bonos
     /// - pruebas
+    /// 
+    /// También aumenta la Agonía histórica.
     /// </summary>
-    /// <param name="cantidad">Cantidad de Agonía a sumar.</param>
-    public void AgregarAgonia(float cantidad)
+    public void AgregarAgonia(double cantidad)
     {
-        // Si la cantidad no es válida, no hacemos nada.
-        if (cantidad <= 0f)
+        if (cantidad <= 0d)
         {
             return;
         }
 
         agonia += cantidad;
+        agoniaHistorica += cantidad;
 
-        // Actualizamos UI y guardamos.
         ActualizarTextoAgonia();
         GuardarDatos();
     }
 
     /// <summary>
-    /// Método puente para permitir que un botón de Unity compre un Productor.
+    /// Calcula cuánta Agonía da actualmente un click manual.
     /// 
-    /// Este método existe porque el sistema OnClick() de Unity solo muestra
-    /// métodos públicos que devuelven void.
+    /// Fórmula base actual:
+    /// (Agonía base por click + bono plano) * multiplicador
     /// 
-    /// Nuestro método principal de compra devuelve bool:
-    ///     ComprarProductor(Productor productor)
+    /// Esto se deja así desde ahora para que más adelante
+    /// podamos conectar:
+    /// - mejoras de click
+    /// - mejoras globales
+    /// - efectos temporales
+    /// - prestigio
+    /// - gachapón
     /// 
-    /// Por eso no aparece directamente en el Inspector del botón.
-    /// 
-    /// Esta función simplemente llama al método real de compra,
-    /// pero sin devolver nada, para que Unity sí la muestre en el botón.
+    /// sin tener que rehacer la base.
     /// </summary>
-    /// <param name="productor">
-    /// Productor que se quiere comprar desde el botón.
-    /// </param>
+    public double ObtenerAgoniaPorClick()
+    {
+        double valorClick = (agoniaBasePorClick + bonoPlanoClick) * multiplicadorClick;
+        return valorClick;
+    }
+
+    /// <summary>
+    /// Ejecuta un click manual del jugador.
+    /// 
+    /// Este método:
+    /// - calcula la Agonía que da el click actual
+    /// - la suma a la Agonía disponible
+    /// - la suma también a la Agonía histórica
+    /// - actualiza la interfaz
+    /// - guarda el progreso
+    /// 
+    /// Importante:
+    /// Este será el punto base para todas las mejoras futuras del click.
+    /// </summary>
+    public void HacerClickManual()
+    {
+        double agoniaGanada = ObtenerAgoniaPorClick();
+
+        agonia += agoniaGanada;
+        agoniaHistorica += agoniaGanada;
+
+        ActualizarTextoAgonia();
+        GuardarDatos();
+    }
+
+    /// <summary>
+    /// Método puente para conectar el botón principal del click
+    /// desde el inspector de Unity.
+    /// </summary>
+    public void HacerClickManualDesdeBoton()
+    {
+        HacerClickManual();
+    }
+
+    /// <summary>
+    /// Método puente para permitir comprar un Productor desde un botón de Unity.
+    /// </summary>
     public void ComprarProductorDesdeBoton(Productor productor)
     {
         ComprarProductor(productor);
@@ -267,45 +289,33 @@ public class Gestor_Economia : MonoBehaviour
     /// Intenta comprar una unidad de un Productor específico.
     /// 
     /// Flujo:
-    /// 1. Verifica que exista el Productor.
-    /// 2. Consulta cuánto cuesta actualmente.
-    /// 3. Revisa si el jugador tiene suficiente Agonía.
-    /// 4. Si alcanza, descuenta la Agonía y compra el edificio.
-    /// 5. Guarda y actualiza interfaz.
-    /// 
-    /// Importante:
-    /// Aquí es donde ya se centraliza la compra.
-    /// Es decir, el Productor NO se compra solo:
-    /// el Gestor_Economia autoriza la compra.
+    /// 1. Verifica que exista el Productor
+    /// 2. Consulta el costo actual
+    /// 3. Valida si alcanza la Agonía
+    /// 4. Resta la Agonía
+    /// 5. Compra el edificio
+    /// 6. Recalcula producción
+    /// 7. Guarda
     /// </summary>
-    /// <param name="productor">El productor que se quiere comprar.</param>
-    /// <returns>Devuelve true si la compra se realizó, false si falló.</returns>
     public bool ComprarProductor(Productor productor)
     {
-        // Validamos que el Productor exista.
         if (productor == null)
         {
             Debug.LogError("Se intentó comprar un Productor nulo.");
             return false;
         }
 
-        // Obtenemos el costo actual de ese Productor.
-        float costoActual = productor.ObtenerCostoActual();
+        double costoActual = productor.ObtenerCostoActual();
 
-        // Si no hay suficiente Agonía, la compra falla.
         if (!PuedeComprar(costoActual))
         {
             Debug.Log("No hay suficiente Agonía para comprar: " + productor.Nombre);
             return false;
         }
 
-        // Restamos la Agonía necesaria.
         agonia -= costoActual;
-
-        // Le decimos al Productor que aumente su cantidad comprada.
         productor.ComprarEdificio();
 
-        // Recalculamos producción, actualizamos UI y guardamos.
         CalcularProduccionTotal();
         ActualizarTextoAgonia();
         GuardarDatos();
@@ -316,50 +326,118 @@ public class Gestor_Economia : MonoBehaviour
     }
 
     /// <summary>
-    /// Guarda la Agonía total actual en PlayerPrefs.
+    /// Método puente para permitir comprar la mejora local desde un botón de Unity.
+    /// </summary>
+    public void ComprarMejoraLocalDesdeBoton(Productor productor)
+    {
+        ComprarMejoraLocal(productor);
+    }
+
+    /// <summary>
+    /// Intenta comprar la siguiente mejora local de un Productor.
     /// 
-    /// Ojo:
-    /// La cantidad de cada edificio la sigue guardando su propio Productor.
-    /// Este gestor solo guarda la moneda global.
+    /// Flujo:
+    /// 1. Verifica que exista el Productor.
+    /// 2. Verifica que no tenga el máximo nivel.
+    /// 3. Verifica que la mejora ya esté desbloqueada por cantidad.
+    /// 4. Consulta el costo de la mejora.
+    /// 5. Revisa si alcanza la Agonía.
+    /// 6. Compra la mejora.
+    /// 7. Recalcula producción, actualiza UI y guarda.
+    /// </summary>
+    public bool ComprarMejoraLocal(Productor productor)
+    {
+        if (productor == null)
+        {
+            Debug.LogError("Se intentó comprar una mejora local de un Productor nulo.");
+            return false;
+        }
+
+        if (productor.TieneMaximaMejoraLocal())
+        {
+            Debug.Log("El edificio ya alcanzó su mejora local máxima: " + productor.Nombre);
+            return false;
+        }
+
+        if (!productor.PuedeDesbloquearSiguienteMejoraLocal())
+        {
+            Debug.Log("Aún no se desbloquea la siguiente mejora local de: " + productor.Nombre);
+            return false;
+        }
+
+        double costoMejora = productor.ObtenerCostoSiguienteMejoraLocal();
+
+        if (!PuedeComprar(costoMejora))
+        {
+            Debug.Log("No hay suficiente Agonía para la mejora local de: " + productor.Nombre);
+            return false;
+        }
+
+        agonia -= costoMejora;
+
+        bool compraRealizada = productor.ComprarSiguienteMejoraLocal();
+
+        if (!compraRealizada)
+        {
+            return false;
+        }
+
+        CalcularProduccionTotal();
+        ActualizarTextoAgonia();
+        GuardarDatos();
+
+        Debug.Log("Mejora local comprada: " + productor.Nombre + " | Nuevo nivel: " + productor.NivelMejoraLocal);
+
+        return true;
+    }
+
+    /// <summary>
+    /// Guarda la Agonía actual y la Agonía histórica.
+    /// 
+    /// Se guardan como texto para evitar pérdida de precisión
+    /// con números grandes.
     /// </summary>
     public void GuardarDatos()
     {
-        PlayerPrefs.SetFloat(CLAVE_AGONIA, agonia);
+        PlayerPrefs.SetString(CLAVE_AGONIA, agonia.ToString(CultureInfo.InvariantCulture));
+        PlayerPrefs.SetString(CLAVE_AGONIA_HISTORICA, agoniaHistorica.ToString(CultureInfo.InvariantCulture));
         PlayerPrefs.Save();
     }
 
     /// <summary>
-    /// Carga la Agonía total desde PlayerPrefs.
+    /// Carga la Agonía actual y la Agonía histórica.
     /// 
-    /// Si no hay nada guardado, empieza en 0.
+    /// Si no hay datos guardados, ambas empiezan en 0.
     /// </summary>
     public void CargarDatos()
     {
-        agonia = PlayerPrefs.GetFloat(CLAVE_AGONIA, 0f);
+        string agoniaGuardada = PlayerPrefs.GetString(CLAVE_AGONIA, "0");
+        string agoniaHistoricaGuardada = PlayerPrefs.GetString(CLAVE_AGONIA_HISTORICA, "0");
+
+        double.TryParse(agoniaGuardada, NumberStyles.Any, CultureInfo.InvariantCulture, out agonia);
+        double.TryParse(agoniaHistoricaGuardada, NumberStyles.Any, CultureInfo.InvariantCulture, out agoniaHistorica);
     }
 
     /// <summary>
-    /// Reinicia la economía completa del juego.
+    /// Reinicia la economía base del juego.
     /// 
-    /// Hace esto:
-    /// 1. Pone la Agonía en 0.
-    /// 2. Reinicia cada Productor.
-    /// 3. Recalcula la producción total.
-    /// 4. Actualiza la interfaz.
-    /// 5. Guarda el estado limpio.
+    /// Esto:
+    /// - pone la Agonía actual en 0
+    /// - pone la Agonía histórica en 0
+    /// - reinicia todos los Productores
+    /// - recalcula producción
+    /// - guarda el estado limpio
     /// 
-    /// Este método es útil para:
-    /// - pruebas
-    /// - botón de reinicio
-    /// - reset del save
-    /// - futuras mecánicas de prestigio
+    /// Más adelante, cuando exista el sistema de prestigio,
+    /// este método se podrá separar entre:
+    /// - reinicio total
+    /// - reinicio de prestigio
     /// </summary>
     public void ReiniciarDatos()
     {
-        // Reiniciamos la Agonía global.
-        agonia = 0f;
+        agonia = 0d;
+        agoniaHistorica = 0d;
 
-        // Reiniciamos todos los productores registrados.
         if (productores != null && productores.Length > 0)
         {
             for (int i = 0; i < productores.Length; i++)
@@ -373,38 +451,29 @@ public class Gestor_Economia : MonoBehaviour
             }
         }
 
-        // Recalculamos porque ahora todo debería producir 0.
         CalcularProduccionTotal();
-
-        // Refrescamos la interfaz.
         ActualizarTextoAgonia();
-
-        // Guardamos los cambios.
         GuardarDatos();
 
         Debug.Log("Economía reiniciada correctamente.");
     }
 
     /// <summary>
-    /// Revisa referencias importantes del script para ayudarte a detectar
-    /// errores desde el inicio.
+    /// Verifica referencias importantes del script.
     /// </summary>
     private void VerificarReferencias()
     {
-        // Aviso si no se asignó el texto de UI.
         if (textAgonia == null)
         {
             Debug.LogWarning("Gestor_Economia: no se asignó el TMP_Text de Agonía.");
         }
 
-        // Aviso si no hay productores en el arreglo.
         if (productores == null || productores.Length == 0)
         {
             Debug.LogWarning("Gestor_Economia: no hay Productores asignados en el arreglo.");
             return;
         }
 
-        // Revisamos si hay posiciones vacías dentro del arreglo.
         for (int i = 0; i < productores.Length; i++)
         {
             if (productores[i] == null)
@@ -415,7 +484,7 @@ public class Gestor_Economia : MonoBehaviour
     }
 
     /// <summary>
-    /// Cuando el juego se cierra, guardamos la Agonía automáticamente.
+    /// Guarda automáticamente al cerrar el juego.
     /// </summary>
     private void OnApplicationQuit()
     {
@@ -423,10 +492,8 @@ public class Gestor_Economia : MonoBehaviour
     }
 
     /// <summary>
-    /// Cuando la app se pausa (por ejemplo, minimizas el juego),
-    /// guardamos la Agonía automáticamente.
+    /// Guarda automáticamente al pausar la aplicación.
     /// </summary>
-    /// <param name="pauseStatus">true si la app se pausó.</param>
     private void OnApplicationPause(bool pauseStatus)
     {
         if (pauseStatus)
